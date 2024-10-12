@@ -6,7 +6,8 @@ from jax.lax import scan
 from jax.tree_util import tree_map
 
 from pmwd.boltzmann import growth
-from pmwd.cosmology import E2, H_deriv
+from pmwd.cosmology import E2, H_deriv, dcom_to_a
+
 from pmwd.gravity import gravity
 
 
@@ -192,13 +193,11 @@ def observe(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
 
 
 def observe_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
-    if obsvbl is None:
-        pass
+    if obsvbl is None or obs_offset is None:
+        obsvbl = None
     else:
-        obsvbl = ParticlesObs(conf=ptcl.conf, pmid=ptcl.pmid, disp=ptcl.disp, obs_offset=obs_offset)
-        obsvbl.replace(mesh_a=comoving_distance_to_scale_factor(obsvbl.mesh_rco, cosmo))
+        obsvbl = obsvbl.set_obs(obs_offset=obs_offset, cosmo=cosmo)
     return obsvbl
-        
 
 
 @jit

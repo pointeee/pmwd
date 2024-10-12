@@ -56,6 +56,12 @@ class Particles:
     vel: Optional[ArrayLike] = None
     acc: Optional[ArrayLike] = None
 
+    obs_offset: Optional[ArrayLike] = None
+    mesh_pos: Optional[ArrayLike] = None  # pos reletive to the observer
+    mesh_rco: Optional[ArrayLike] = None  # relative pos -> comoving distance
+    mesh_los: Optional[ArrayLike] = None  # line-of-sight direction
+    mesh_a:   Optional[ArrayLike] = None  # scale factor on the mesh
+
     attr: Any = None
 
     def __post_init__(self):
@@ -63,6 +69,7 @@ class Particles:
             return
 
         conf = self.conf
+        
         for name, value in self.named_children():
             dtype = conf.pmid_dtype if name == 'pmid' else conf.float_dtype
             if name == 'attr':
@@ -77,6 +84,18 @@ class Particles:
 
     def __getitem__(self, key):
         return tree_map(itemgetter(key), self)
+
+    def set_obs(self, obs_offset, cosmo):
+        self = self.replace(obs_offset=obs_offset)
+        self = self.set_mesh_data(cosmo)
+        return self
+
+    def set_mesh_data(self, cosmo):
+        self = self.replace(mesh_pos=self.pmid * self.conf.cell_size + self.obs_offset)
+        self = self.replace(mesh_rco=jnp.linalg.norm(self.mesh_rpos, axis=1, keepdims=True))
+        self = self.replace(mesh_los=self.mesh_rpos / self.mesh_rco)
+        self = self.replace(mesh_a = None) # just a place holder
+        return self
 
     @classmethod
     def from_pos(cls, conf, pos, wrap=True):
@@ -207,33 +226,6 @@ class Particles:
             pos %= jnp.array(conf.box_size, dtype=dtype)
 
         return pos
-
-class ParticlesObs(Particles):
-    """
-    Particle state with the position of observer specified.
-    obs_offset: the offset from the observer to the the origin of the mesh in "L"
-    """
-    conf: Configuration = field(repr=False)
-
-    pmid: ArrayLike
-    disp: ArrayLike
-    obs_offset: Optional[ArrayLike] = jnp.array([0,0,0])
-
-    vel: Optional[ArrayLike] = None
-    acc: Optional[ArrayLike] = None
-
-    attr: Any = None
-
-    def __post_init__(self):
-        conf = self.conf
-
-        # mesh settings
-        self.mesh_pos = self.pmid * conf.cell_size + self.obs_offset # pos reletive to the observer
-        self.mesh_rco = jnp.linalg.norm(self.mesh_rpos, axis=1, keepdims=True) # comoving distance
-        self.mesh_los  = self.mesh_rpos / self.mesh_rco # los vector
-        self.mesh_a    = self.mesh_rco * 0 # just a place holder
-        
-        super().__post_init__()
 
         
 def ptcl_enmesh(ptcl, conf, offset=0, cell_size=None, mesh_shape=None,

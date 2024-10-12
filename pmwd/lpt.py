@@ -3,7 +3,7 @@ from itertools import permutations, combinations
 from jax import jit, checkpoint, ensure_compile_time_eval
 import jax.numpy as jnp
 
-from pmwd.particles import Particles, ParticlesObs
+from pmwd.particles import Particles
 from pmwd.cosmology import E2
 from pmwd.boltzmann import growth
 from pmwd.gravity import laplace, neg_grad

@@ -273,6 +273,9 @@ def Omega_m_a(a, cosmo):
     return cosmo.Omega_m / (a**3 * E2(a, cosmo))
 
 def calculate_dcom(cosmo, conf):
+    """
+    Tabluate the comoving distance (dcom) for the cosmo. In units of [Mpc/h] (from JaxCosmo)
+    """
     cosmo_jc = jc.Cosmology(cosmo.Omega_c, cosmo.Omega_b, cosmo.h, 
                             cosmo.n_s, cosmo.sigma8, 
                             cosmo.Omega_k, cosmo.w_0, cosmo.w_a)
@@ -284,11 +287,17 @@ def calculate_dcom(cosmo, conf):
 
 
 def dcom_to_a(dcom, conf, cosmo):
+    """
+    Interpolate to get the scale factor.
+    """
     float_dtype = jnp.promote_types(dcom.dtype, float)
     a = jnp.interp(dcom, cosmo.dcom[::-1], conf.growth_a[::-1]) # must be increasing
     return a.astype(float_dtype)
 
 def a_to_dcom(a, conf, cosmo):
+    """
+    Interpolate to get the comoving distance.
+    """
     float_dtype = jnp.promote_types(a.dtype, float)
     dcom = jnp.interp(a, conf.growth_a, cosmo.dcom)
     return dcom.astype(float_dtype)
