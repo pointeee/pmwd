@@ -188,7 +188,16 @@ def observe(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
     if obsvbl is None:
         pass
     else:
-        pass # TODO
+        mask = jnp.broadcast_to((obsvbl.mesh_a > a_prev) * (obsvbl.mesh_a <= a_next), (conf.mesh_size, 3))
+        #disp = obsvbl.disp.at[mask].set(
+        #    ptcl.disp[mask] + (
+        #        ptcl.vel[mask] * jnp.sum(ptcl.disp[mask] * obsvbl.mesh_los[mask], axis=1)
+        #      / (obsvbl.mesh_drc[mask] * (obsvbl.mesh_a[mask] * obsvbl.mesh_E[mask]) - jnp.sum(ptcl.vel[mask] * obsvbl.mesh_los[mask], axis=1))
+        #    ) 
+        #)
+        disp = jnp.where(mask, ptcl.disp + ptcl.vel * jnp.sum(ptcl.disp*obsvbl.mesh_los, axis=1, keepdims=True) / (obsvbl.mesh_drc * (obsvbl.mesh_a * obsvbl.mesh_E) - jnp.sum(ptcl.vel*obsvbl.mesh_los, axis=1, keepdims=True)), obsvbl.disp)
+        vel  = jnp.where(mask, ptcl.vel, obsvbl.vel)
+        obsvbl = obsvbl.replace(disp=disp, vel=vel)
     return obsvbl
 
 
@@ -201,7 +210,17 @@ def observe_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
 
 
 @jit
-def nbody_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
+def nbody_init(a, ptcl, obsvbl, cosmo, conf):
+    ptcl = force(a, ptcl, cosmo, conf)
+
+    ptcl = coevolve_init(a, ptcl, cosmo, conf)
+
+    obsvbl = None
+
+    return ptcl, obsvbl
+
+@jit
+def nbody_lightcone_init(a, ptcl, obsvbl, cosmo, conf, obs_offset):
     ptcl = force(a, ptcl, cosmo, conf)
 
     ptcl = coevolve_init(a, ptcl, cosmo, conf)
@@ -213,6 +232,17 @@ def nbody_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
 
 @jit
 def nbody_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
+    ptcl = integrate(a_prev, a_next, ptcl, cosmo, conf)
+
+    ptcl = coevolve(a_prev, a_next, ptcl, cosmo, conf)
+
+    obsvbl = None
+
+    return ptcl, obsvbl
+
+
+@jit
+def nbody_lightcone_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
     ptcl = integrate(a_prev, a_next, ptcl, cosmo, conf)
 
     ptcl = coevolve(a_prev, a_next, ptcl, cosmo, conf)
@@ -256,15 +286,17 @@ def nbody_lightcone(ptcl, obsvbl, cosmo, conf, reverse=False, obs_offset=None):
     a_nbody = conf.a_nbody[::-1] if reverse else conf.a_nbody
     a_nbody_arr = jnp.array([a_nbody[:-1], a_nbody[1:]]).T
 
-    ptcl, obsvbl = nbody_init(a_nbody[0], ptcl, obsvbl, cosmo, conf, obs_offset)
+    ptcl, obsvbl = nbody_lightcone_init(a_nbody[0], ptcl, obsvbl, cosmo, conf, obs_offset)
 
-    def _nbody_step(carry, x):
+    def _nbody_lightcone_step(carry, x):
         ptcl, obsvbl = carry
         a_prev, a_next = x
-        ptcl, obsvbl = nbody_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
+        ptcl, obsvbl = nbody_lightcone_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
         return (ptcl, obsvbl), None
-    (ptcl, obsvbl), _ = scan(_nbody_step, (ptcl, obsvbl), a_nbody_arr)
+    (ptcl, obsvbl), _ = scan(_nbody_lightcone_step, (ptcl, obsvbl), a_nbody_arr)
     return ptcl, obsvbl
+
+
 
 @jit
 def nbody_adj_init(a, ptcl, ptcl_cot, obsvbl_cot, cosmo, conf):

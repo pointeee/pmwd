@@ -10,7 +10,7 @@ from jax.tree_util import tree_map
 
 from pmwd.tree_util import pytree_dataclass
 from pmwd.configuration import Configuration
-from pmwd.cosmology import E2
+from pmwd.cosmology import E2, dcom_to_a, D_a_to_dcom
 from pmwd.util import is_float0_array
 from pmwd.pm_util import enmesh
 
@@ -56,11 +56,13 @@ class Particles:
     vel: Optional[ArrayLike] = None
     acc: Optional[ArrayLike] = None
 
-    obs_offset: Optional[ArrayLike] = None
+    obs_offset: Optional[ArrayLike] = None # offset **from observer to the origin of mesh** (to keep the quantities postive)
     mesh_pos: Optional[ArrayLike] = None  # pos reletive to the observer
     mesh_rco: Optional[ArrayLike] = None  # relative pos -> comoving distance
     mesh_los: Optional[ArrayLike] = None  # line-of-sight direction
     mesh_a:   Optional[ArrayLike] = None  # scale factor on the mesh
+    mesh_drc: Optional[ArrayLike] = None  # d/da rcom(a)
+    mesh_E:   Optional[ArrayLike] = None  # sqrt(E^2) = H(a) / H_0
 
     attr: Any = None
 
@@ -92,9 +94,11 @@ class Particles:
 
     def set_mesh_data(self, cosmo):
         self = self.replace(mesh_pos=self.pmid * self.conf.cell_size + self.obs_offset)
-        self = self.replace(mesh_rco=jnp.linalg.norm(self.mesh_rpos, axis=1, keepdims=True))
-        self = self.replace(mesh_los=self.mesh_rpos / self.mesh_rco)
-        self = self.replace(mesh_a = None) # just a place holder
+        self = self.replace(mesh_rco=jnp.linalg.norm(self.mesh_pos, axis=1, keepdims=True))
+        self = self.replace(mesh_los=self.mesh_pos / self.mesh_rco)
+        self = self.replace(mesh_a=dcom_to_a(self.mesh_rco, self.conf, cosmo))
+        self = self.replace(mesh_E=jnp.sqrt(E2(self.mesh_a, cosmo)))
+        self = self.replace(mesh_drc=D_a_to_dcom(self.mesh_a, self.conf, cosmo))
         return self
 
     @classmethod

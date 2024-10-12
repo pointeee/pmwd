@@ -294,6 +294,7 @@ def dcom_to_a(dcom, conf, cosmo):
     a = jnp.interp(dcom, cosmo.dcom[::-1], conf.growth_a[::-1]) # must be increasing
     return a.astype(float_dtype)
 
+
 def a_to_dcom(a, conf, cosmo):
     """
     Interpolate to get the comoving distance.
@@ -301,4 +302,10 @@ def a_to_dcom(a, conf, cosmo):
     float_dtype = jnp.promote_types(a.dtype, float)
     dcom = jnp.interp(a, conf.growth_a, cosmo.dcom)
     return dcom.astype(float_dtype)
+
+def D_a_to_dcom(a, conf, cosmo):
+    """
+    Derivaitve of the r_comv(a) function.
+    """
+    return 1 / (a**2 * jnp.sqrt(E2(a, cosmo))) * conf.c
     
