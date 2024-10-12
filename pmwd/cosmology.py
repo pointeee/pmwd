@@ -8,6 +8,8 @@ from jax.typing import ArrayLike
 import jax.numpy as jnp
 from jax.tree_util import tree_map
 
+import jax_cosmo as jc
+
 from pmwd.tree_util import pytree_dataclass
 from pmwd.configuration import Configuration
 
@@ -70,6 +72,8 @@ class Cosmology:
     growth: Optional[Array] = field(default=None, compare=False)
 
     varlin: Optional[Array] = field(default=None, compare=False)
+
+    dcom: Optional[Array] = field(default=None, compare=False)
 
     def __post_init__(self):
         if self._is_transforming():
@@ -267,3 +271,25 @@ def Omega_m_a(a, cosmo):
     a = jnp.asarray(a, dtype=cosmo.conf.cosmo_dtype)
 
     return cosmo.Omega_m / (a**3 * E2(a, cosmo))
+
+def calculate_dcom(cosmo, conf):
+    cosmo_jc = jc.Cosmology(cosmo.Omega_c, cosmo.Omega_b, cosmo.h, 
+                            cosmo.n_s, cosmo.sigma8, 
+                            cosmo.Omega_k, cosmo.w_0, cosmo.w_a)
+    a = conf.growth_a
+    a.at[0].set(1e-3) # no lightcone at such highz right
+    dcom = jc.background.radial_comoving_distance(cosmo_jc, a)
+    
+    return cosmo.replace(dcom=jnp.array(dcom, dtype=conf.float_dtype))
+
+
+def dcom_to_a(dcom, conf, cosmo):
+    float_dtype = jnp.promote_types(dcom.dtype, float)
+    a = jnp.interp(dcom, cosmo.dcom[::-1], conf.growth_a[::-1]) # must be increasing
+    return a.astype(float_dtype)
+
+def a_to_dcom(a, conf, cosmo):
+    float_dtype = jnp.promote_types(a.dtype, float)
+    dcom = jnp.interp(a, conf.growth_a, cosmo.dcom)
+    return dcom.astype(float_dtype)
+    

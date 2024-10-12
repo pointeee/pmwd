@@ -3,7 +3,7 @@ from itertools import permutations, combinations
 from jax import jit, checkpoint, ensure_compile_time_eval
 import jax.numpy as jnp
 
-from pmwd.particles import Particles
+from pmwd.particles import Particles, ParticlesObs
 from pmwd.cosmology import E2
 from pmwd.boltzmann import growth
 from pmwd.gravity import laplace, neg_grad
@@ -186,6 +186,7 @@ def lpt(modes, cosmo, conf):
 
     a = conf.a_start
     ptcl = Particles.gen_grid(conf, vel=True)
+    ptcl_obs = Particles.gen_grid(conf, vel=True)
 
     for order in range(1, 1+conf.lpt_order):
         D = growth(a, cosmo, conf, order=order)
@@ -207,6 +208,6 @@ def lpt(modes, cosmo, conf):
             vel = ptcl.vel.at[:, i].add(a2HDp * grad)
             ptcl = ptcl.replace(disp=disp, vel=vel)
 
-    obsvbl = None  # TODO cubic Hermite interp light cone as in nbody
+    obsvbl = ptcl_obs.replace(disp=ptcl.disp, vel=ptcl.vel)
 
-    return ptcl, None
+    return ptcl, obsvbl

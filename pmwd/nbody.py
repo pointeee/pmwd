@@ -184,20 +184,30 @@ def coevolve_init(a, ptcl, cosmo, conf):
 
 
 def observe(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
-    pass
+    if obsvbl is None:
+        pass
+    else:
+        pass # TODO
+    return obsvbl
 
 
-def observe_init(a, ptcl, obsvbl, cosmo, conf):
-    pass
+def observe_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
+    if obsvbl is None:
+        pass
+    else:
+        obsvbl = ParticlesObs(conf=ptcl.conf, pmid=ptcl.pmid, disp=ptcl.disp, obs_offset=obs_offset)
+        obsvbl.replace(mesh_a=comoving_distance_to_scale_factor(obsvbl.mesh_rco, cosmo))
+    return obsvbl
+        
 
 
 @jit
-def nbody_init(a, ptcl, obsvbl, cosmo, conf):
+def nbody_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
     ptcl = force(a, ptcl, cosmo, conf)
 
     ptcl = coevolve_init(a, ptcl, cosmo, conf)
 
-    obsvbl = observe_init(a, ptcl, obsvbl, cosmo, conf)
+    obsvbl = observe_init(a, ptcl, obsvbl, cosmo, conf, obs_offset)
 
     return ptcl, obsvbl
 
@@ -232,6 +242,22 @@ def nbody_scan(ptcl, obsvbl, cosmo, conf, reverse=False):
     a_nbody_arr = jnp.array([a_nbody[:-1], a_nbody[1:]]).T
 
     ptcl, obsvbl = nbody_init(a_nbody[0], ptcl, obsvbl, cosmo, conf)
+
+    def _nbody_step(carry, x):
+        ptcl, obsvbl = carry
+        a_prev, a_next = x
+        ptcl, obsvbl = nbody_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
+        return (ptcl, obsvbl), None
+    (ptcl, obsvbl), _ = scan(_nbody_step, (ptcl, obsvbl), a_nbody_arr)
+    return ptcl, obsvbl
+
+@partial(custom_vjp, nondiff_argnums=(4,))
+def nbody_lightcone(ptcl, obsvbl, cosmo, conf, reverse=False, obs_offset=None):
+    """N-body time integration. Use jax.lax.scan to speed up the compilation."""
+    a_nbody = conf.a_nbody[::-1] if reverse else conf.a_nbody
+    a_nbody_arr = jnp.array([a_nbody[:-1], a_nbody[1:]]).T
+
+    ptcl, obsvbl = nbody_init(a_nbody[0], ptcl, obsvbl, cosmo, conf, obs_offset)
 
     def _nbody_step(carry, x):
         ptcl, obsvbl = carry
@@ -306,6 +332,10 @@ def nbody_fwd_scan(ptcl, obsvbl, cosmo, conf, reverse):
     ptcl, obsvbl = nbody_scan(ptcl, obsvbl, cosmo, conf, reverse)
     return (ptcl, obsvbl), (ptcl, cosmo, conf)
 
+def nbody_fwd_lightcone(ptcl, obsvbl, cosmo, conf, reverse, obs_offset):
+    ptcl, obsvbl = nbody_lightcone(ptcl, obsvbl, cosmo, conf, reverse, obs_offset)
+    return (ptcl, obsvbl), (ptcl, cosmo, conf)
+
 def nbody_bwd(reverse, res, cotangents):
     ptcl, cosmo, conf = res
     ptcl_cot, obsvbl_cot = cotangents
@@ -324,5 +354,9 @@ def nbody_bwd_scan(reverse, res, cotangents):
 
     return ptcl_cot, obsvbl_cot, cosmo_cot, None
 
+def nbody_bwd_lightcone(reverse, res, cotangents):
+    pass
+
 nbody.defvjp(nbody_fwd, nbody_bwd)
 nbody_scan.defvjp(nbody_fwd_scan, nbody_bwd_scan)
+nbody_lightcone.defvjp(nbody_fwd_lightcone, nbody_bwd_lightcone)

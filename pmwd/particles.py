@@ -208,7 +208,34 @@ class Particles:
 
         return pos
 
+class ParticlesObs(Particles):
+    """
+    Particle state with the position of observer specified.
+    obs_offset: the offset from the observer to the the origin of the mesh in "L"
+    """
+    conf: Configuration = field(repr=False)
 
+    pmid: ArrayLike
+    disp: ArrayLike
+    obs_offset: Optional[ArrayLike] = jnp.array([0,0,0])
+
+    vel: Optional[ArrayLike] = None
+    acc: Optional[ArrayLike] = None
+
+    attr: Any = None
+
+    def __post_init__(self):
+        conf = self.conf
+
+        # mesh settings
+        self.mesh_pos = self.pmid * conf.cell_size + self.obs_offset # pos reletive to the observer
+        self.mesh_rco = jnp.linalg.norm(self.mesh_rpos, axis=1, keepdims=True) # comoving distance
+        self.mesh_los  = self.mesh_rpos / self.mesh_rco # los vector
+        self.mesh_a    = self.mesh_rco * 0 # just a place holder
+        
+        super().__post_init__()
+
+        
 def ptcl_enmesh(ptcl, conf, offset=0, cell_size=None, mesh_shape=None,
                 wrap=True, drop=True, grad=False):
     """Compute multilinear mesh indices and fractions given particles.
