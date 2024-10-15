@@ -12,7 +12,9 @@ from pmwd.gather import gather
 from pmwd.gravity import laplace, neg_grad, gravity
 from pmwd.modes import white_noise, linear_modes
 from pmwd.lpt import lpt
-from pmwd.nbody import nbody, nbody_scan, nbody_lightcone
+from pmwd.nbody import nbody
+from pmwd.nbody_scan import nbody_scan
+from pmwd.nbody_lightcone import nbody_lightcone
 try:
     from pmwd._version import __version__
 except ModuleNotFoundError:

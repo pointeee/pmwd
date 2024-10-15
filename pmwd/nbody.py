@@ -184,30 +184,6 @@ def coevolve_init(a, ptcl, cosmo, conf):
     return ptcl
 
 
-def observe(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
-    if obsvbl is None:
-        pass
-    else:
-        mask = jnp.broadcast_to((obsvbl.mesh_a > a_prev) * (obsvbl.mesh_a <= a_next), (conf.mesh_size, 3))
-        #disp = obsvbl.disp.at[mask].set(
-        #    ptcl.disp[mask] + (
-        #        ptcl.vel[mask] * jnp.sum(ptcl.disp[mask] * obsvbl.mesh_los[mask], axis=1)
-        #      / (obsvbl.mesh_drc[mask] * (obsvbl.mesh_a[mask] * obsvbl.mesh_E[mask]) - jnp.sum(ptcl.vel[mask] * obsvbl.mesh_los[mask], axis=1))
-        #    ) 
-        #)
-        disp = jnp.where(mask, ptcl.disp + ptcl.vel * jnp.sum(ptcl.disp*obsvbl.mesh_los, axis=1, keepdims=True) / (obsvbl.mesh_drc * (obsvbl.mesh_a * obsvbl.mesh_E) - jnp.sum(ptcl.vel*obsvbl.mesh_los, axis=1, keepdims=True)), obsvbl.disp)
-        vel  = jnp.where(mask, ptcl.vel, obsvbl.vel)
-        obsvbl = obsvbl.replace(disp=disp, vel=vel)
-    return obsvbl
-
-
-def observe_init(a, ptcl, obsvbl, cosmo, conf, obs_offset=None):
-    if obsvbl is None or obs_offset is None:
-        obsvbl = None
-    else:
-        obsvbl = obsvbl.set_obs(obs_offset=obs_offset, cosmo=cosmo)
-    return obsvbl
-
 
 @jit
 def nbody_init(a, ptcl, obsvbl, cosmo, conf):
@@ -216,16 +192,6 @@ def nbody_init(a, ptcl, obsvbl, cosmo, conf):
     ptcl = coevolve_init(a, ptcl, cosmo, conf)
 
     obsvbl = None
-
-    return ptcl, obsvbl
-
-@jit
-def nbody_lightcone_init(a, ptcl, obsvbl, cosmo, conf, obs_offset):
-    ptcl = force(a, ptcl, cosmo, conf)
-
-    ptcl = coevolve_init(a, ptcl, cosmo, conf)
-
-    obsvbl = observe_init(a, ptcl, obsvbl, cosmo, conf, obs_offset)
 
     return ptcl, obsvbl
 
@@ -241,16 +207,6 @@ def nbody_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
     return ptcl, obsvbl
 
 
-@jit
-def nbody_lightcone_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
-    ptcl = integrate(a_prev, a_next, ptcl, cosmo, conf)
-
-    ptcl = coevolve(a_prev, a_next, ptcl, cosmo, conf)
-
-    obsvbl = observe(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
-
-    return ptcl, obsvbl
-
 
 @partial(custom_vjp, nondiff_argnums=(4,))
 def nbody(ptcl, obsvbl, cosmo, conf, reverse=False):
@@ -264,37 +220,6 @@ def nbody(ptcl, obsvbl, cosmo, conf, reverse=False):
         ptcl, obsvbl = nbody_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
     return ptcl, obsvbl
 
-@partial(custom_vjp, nondiff_argnums=(4,))
-def nbody_scan(ptcl, obsvbl, cosmo, conf, reverse=False):
-    """N-body time integration. Use jax.lax.scan to speed up the compilation."""
-    a_nbody = conf.a_nbody[::-1] if reverse else conf.a_nbody
-    a_nbody_arr = jnp.array([a_nbody[:-1], a_nbody[1:]]).T
-
-    ptcl, obsvbl = nbody_init(a_nbody[0], ptcl, obsvbl, cosmo, conf)
-
-    def _nbody_step(carry, x):
-        ptcl, obsvbl = carry
-        a_prev, a_next = x
-        ptcl, obsvbl = nbody_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
-        return (ptcl, obsvbl), None
-    (ptcl, obsvbl), _ = scan(_nbody_step, (ptcl, obsvbl), a_nbody_arr)
-    return ptcl, obsvbl
-
-@partial(custom_vjp, nondiff_argnums=(4,))
-def nbody_lightcone(ptcl, obsvbl, cosmo, conf, reverse=False, obs_offset=None):
-    """N-body time integration. Use jax.lax.scan to speed up the compilation."""
-    a_nbody = conf.a_nbody[::-1] if reverse else conf.a_nbody
-    a_nbody_arr = jnp.array([a_nbody[:-1], a_nbody[1:]]).T
-
-    ptcl, obsvbl = nbody_lightcone_init(a_nbody[0], ptcl, obsvbl, cosmo, conf, obs_offset)
-
-    def _nbody_lightcone_step(carry, x):
-        ptcl, obsvbl = carry
-        a_prev, a_next = x
-        ptcl, obsvbl = nbody_lightcone_step(a_prev, a_next, ptcl, obsvbl, cosmo, conf)
-        return (ptcl, obsvbl), None
-    (ptcl, obsvbl), _ = scan(_nbody_lightcone_step, (ptcl, obsvbl), a_nbody_arr)
-    return ptcl, obsvbl
 
 
 
@@ -309,6 +234,8 @@ def nbody_adj_init(a, ptcl, ptcl_cot, obsvbl_cot, cosmo, conf):
     cosmo_cot = tree_map(jnp.zeros_like, cosmo)
 
     return ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force
+
+
 
 
 @jit
@@ -334,38 +261,13 @@ def nbody_adj(ptcl, ptcl_cot, obsvbl_cot, cosmo, conf, reverse=False):
             a_prev, a_next, ptcl, ptcl_cot, obsvbl_cot, cosmo, cosmo_cot, cosmo_cot_force, conf)
     return ptcl, ptcl_cot, cosmo_cot
 
-def nbody_adj_scan(ptcl, ptcl_cot, obsvbl_cot, cosmo, conf, reverse=False):
-    """N-body time integration with adjoint equation. Use jax.lax.scan to speed up the compilation."""
-    a_nbody = conf.a_nbody[::-1] if reverse else conf.a_nbody
-    a_nbody_arr = jnp.array([a_nbody[:0:-1], a_nbody[-2::-1]]).T
-
-
-    ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force = nbody_adj_init(
-        a_nbody[-1], ptcl, ptcl_cot, obsvbl_cot, cosmo, conf)
-
-    def _nbody_adj_step(carry, x):
-        ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force = carry
-        a_prev, a_next = x
-        ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force = nbody_adj_step(
-            a_prev, a_next, ptcl, ptcl_cot, obsvbl_cot, cosmo, cosmo_cot, cosmo_cot_force, conf)
-        return (ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force), None
-    
-    (ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force), _ = scan(_nbody_adj_step, (ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force), a_nbody_arr)
-
-    return ptcl, ptcl_cot, cosmo_cot
 
 
 def nbody_fwd(ptcl, obsvbl, cosmo, conf, reverse):
     ptcl, obsvbl = nbody(ptcl, obsvbl, cosmo, conf, reverse)
     return (ptcl, obsvbl), (ptcl, cosmo, conf)
 
-def nbody_fwd_scan(ptcl, obsvbl, cosmo, conf, reverse):
-    ptcl, obsvbl = nbody_scan(ptcl, obsvbl, cosmo, conf, reverse)
-    return (ptcl, obsvbl), (ptcl, cosmo, conf)
 
-def nbody_fwd_lightcone(ptcl, obsvbl, cosmo, conf, reverse, obs_offset):
-    ptcl, obsvbl = nbody_lightcone(ptcl, obsvbl, cosmo, conf, reverse, obs_offset)
-    return (ptcl, obsvbl), (ptcl, cosmo, conf)
 
 def nbody_bwd(reverse, res, cotangents):
     ptcl, cosmo, conf = res
@@ -376,18 +278,6 @@ def nbody_bwd(reverse, res, cotangents):
 
     return ptcl_cot, obsvbl_cot, cosmo_cot, None
 
-def nbody_bwd_scan(reverse, res, cotangents):
-    ptcl, cosmo, conf = res
-    ptcl_cot, obsvbl_cot = cotangents
 
-    ptcl, ptcl_cot, cosmo_cot = nbody_adj_scan(ptcl, ptcl_cot, obsvbl_cot, cosmo, conf,
-                                          reverse=reverse)
-
-    return ptcl_cot, obsvbl_cot, cosmo_cot, None
-
-def nbody_bwd_lightcone(reverse, res, cotangents):
-    pass
 
 nbody.defvjp(nbody_fwd, nbody_bwd)
-nbody_scan.defvjp(nbody_fwd_scan, nbody_bwd_scan)
-nbody_lightcone.defvjp(nbody_fwd_lightcone, nbody_bwd_lightcone)

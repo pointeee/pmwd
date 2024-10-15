@@ -186,7 +186,7 @@ def lpt(modes, cosmo, conf):
 
     a = conf.a_start
     ptcl = Particles.gen_grid(conf, vel=True)
-    ptcl_obs = Particles.gen_grid(conf, vel=True)
+    obsvbl = Particles.gen_grid(conf, vel=True)
 
     for order in range(1, 1+conf.lpt_order):
         D = growth(a, cosmo, conf, order=order)
@@ -208,6 +208,7 @@ def lpt(modes, cosmo, conf):
             vel = ptcl.vel.at[:, i].add(a2HDp * grad)
             ptcl = ptcl.replace(disp=disp, vel=vel)
 
-    obsvbl = ptcl_obs.replace(disp=ptcl.disp, vel=ptcl.vel)
+    # keep the obsvbl as it is
+    # obsvbl = obsvbl.replace(disp=jnp.ptcl.disp, vel=ptcl.vel)
 
     return ptcl, obsvbl
