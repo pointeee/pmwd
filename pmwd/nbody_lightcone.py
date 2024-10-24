@@ -23,7 +23,6 @@ def observe(a_prev, a_next, ptcl, obsvbl, cosmo, conf):
 
 
 def observe_adj(a_prev, a_next, ptcl, ptcl_cot, obsvbl, obsvbl_cot, cosmo, conf):
-    # WIP; used to account for the obs gradients
     mask = jnp.broadcast_to((obsvbl.mesh_a - a_prev) * (obsvbl.mesh_a - a_next) <=0, (conf.mesh_size, 3))
     
     disp_proj = jnp.sum(ptcl.disp*obsvbl.mesh_los, axis=1, keepdims=True)
@@ -31,7 +30,7 @@ def observe_adj(a_prev, a_next, ptcl, ptcl_cot, obsvbl, obsvbl_cot, cosmo, conf)
     tmp_qty = (obsvbl.mesh_drc * (obsvbl.mesh_a * obsvbl.mesh_E) - vel_proj)
     
     disp_obs_disp_snap = 1. + (ptcl.vel * obsvbl.mesh_los / tmp_qty)
-    disp_obs_vel_snap  = disp_proj / tmp_qty * vel_proj * disp_proj / tmp_qty / tmp_qty
+    disp_obs_vel_snap  = disp_proj / tmp_qty + vel_proj * disp_proj / tmp_qty / tmp_qty
 
     disp_cot = ptcl_cot.disp + jnp.where(mask, obsvbl_cot.disp * disp_obs_disp_snap, 0)
     vel_cot  = ptcl_cot.vel  + jnp.where(mask, obsvbl_cot.disp * disp_obs_vel_snap 
@@ -106,9 +105,6 @@ def nbody_lightcone(ptcl, obsvbl, cosmo, conf, reverse=False, obs_offset=None):
 
 @jit
 def nbody_adj_lightcone_init(a, ptcl, ptcl_cot, obsvbl_cot, cosmo, conf):
-    #ptcl_cot = observe_adj(a_prev, a_next, ptcl, ptcl_cot, obsvbl_cot, cosmo)
-
-    #ptcl, ptcl_cot = coevolve_adj(a_prev, a_next, ptcl, ptcl_cot, cosmo)
 
     ptcl, ptcl_cot, cosmo_cot_force = force_adj(a, ptcl, ptcl_cot, cosmo, conf)
 
@@ -116,7 +112,7 @@ def nbody_adj_lightcone_init(a, ptcl, ptcl_cot, obsvbl_cot, cosmo, conf):
 
     return ptcl, ptcl_cot, cosmo_cot, cosmo_cot_force
 
-def nbody_adj_lightcone(ptcl, ptcl_cot, obsvbl, obsvbl_cot, cosmo, conf, reverse=False): #WIP
+def nbody_adj_lightcone(ptcl, ptcl_cot, obsvbl, obsvbl_cot, cosmo, conf, reverse=False):
     """N-body time integration with adjoint equation. Use jax.lax.scan to speed up the compilation."""
     a_nbody = conf.a_nbody[::-1] if reverse else conf.a_nbody
     a_nbody_arr = jnp.array([a_nbody[:0:-1], a_nbody[-2::-1]]).T
@@ -142,7 +138,7 @@ def nbody_fwd_lightcone(ptcl, obsvbl, cosmo, conf, reverse, obs_offset):
 
 
 def nbody_bwd_lightcone(reverse, obs_offset, res, cotangents):
-    # `reverse` is a nodiff argument.
+    # `reverse, obs_offset` is a nodiff argument.
     ptcl, obsvbl, cosmo, conf = res
     ptcl_cot, obsvbl_cot = cotangents
     nbody_adj_lightcone 
