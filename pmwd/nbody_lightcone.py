@@ -31,7 +31,7 @@ def observe_adj(a_prev, a_next, ptcl, ptcl_cot, obsvbl, obsvbl_cot, cosmo, conf)
     tmp_qty = (obsvbl.mesh_drc * (obsvbl.mesh_a * obsvbl.mesh_E) - vel_proj)
     
     disp_obs_disp_snap = 1. + (ptcl.vel * obsvbl.mesh_los / tmp_qty)
-    disp_obs_vel_snap  = disp_proj / tmp_qty - vel_proj * disp_proj / tmp_qty / tmp_qty
+    disp_obs_vel_snap  = disp_proj / tmp_qty * vel_proj * disp_proj / tmp_qty / tmp_qty
 
     disp_cot = ptcl_cot.disp + jnp.where(mask, obsvbl_cot.disp * disp_obs_disp_snap, 0)
     vel_cot  = ptcl_cot.vel  + jnp.where(mask, obsvbl_cot.disp * disp_obs_vel_snap 
